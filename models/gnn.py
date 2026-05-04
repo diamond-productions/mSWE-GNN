@@ -8,34 +8,29 @@ from torch_geometric.utils import scatter
 from torch.linalg import vector_norm
 from typing import Optional
 
-from utils.dataset import create_scale_mask
+from utils.dataset import create_scale_mask, NUM_WATER_VARS
 
 class GNN(BaseFloodModel):
-    '''
-    GNN encoder-processor-decoder
-    ------
-    num_node_features: int, number of features per node
-    num_edge_features: int, number of features per edge
-    hid_features: int, number of features per node (and edge) in the GNN layers
-    K: int, K-hop neighbourhood
-    n_GNN_layers: int, number of GNN layers
-    dropout: float, add dropout layer in decoder
-    type_GNN: str (default='SWEGNN'), specifies the type of GNN model
-        options: 
-            "GNN_A" : Adjacency as graph shift operator 
-            "GNN_L" : Laplacian as graph shift operator
-            "GAT"   : Graph Attention, i.e., learned shift operator
-            "SWEGNN": learned graph shift operator
-    edge_mlp: bool, adds MLP as edge encoder (valid only for 'SWEGNN')
-    mlp_layers: int (default=2), number of MLP layers in the GNN processor
-    mlp_activation: str (default='prelu'), activation function for the MLP layers
-    gnn_activation: str (default='tanh'), activation function for the GNN layers
-    with_WL: bool (default=False), adds water level as static input
-    normalize: bool (default=True), normalize learned fluxes in SWE-GNN
-    with_filter_matrix: bool (default=True), adds filter matrix to the GNN processor (i.e., adds the H in the graph convolution S*X*H)
-    with_gradient: bool (default=True), adds the gradient of the water variables in the GNN processor
-    base_model_kwargs: dict, additional arguments for the BaseFloodModel, e.g., learned_residuals, seed, residuals_base, etc.
-    '''
+    """Single-scale GNN with encoder-processor-decoder architecture.
+
+    Args:
+        num_node_features (int): number of input node features
+        num_edge_features (int): number of input edge features
+        hid_features (int): hidden feature dimension for GNN layers
+        K (int): K-hop neighbourhood size
+        n_GNN_layers (int): number of GNN processor layers
+        type_GNN (str): graph operator type; 'SWEGNN', 'GNN_A', 'GNN_L', or 'GAT'
+        mlp_layers (int): number of layers in MLP blocks
+        mlp_activation (str): activation function for MLP blocks
+        gnn_activation (str): activation function applied after each GNN layer
+        dropout (float): dropout probability in the decoder
+        with_WL (bool): whether to append water level as static input
+        normalize (bool): whether to normalise learned fluxes in SWEGNN
+        with_filter_matrix (bool): whether to include a filter matrix H in the graph convolution
+        edge_mlp (bool): whether to apply an MLP edge encoder (SWEGNN only)
+        with_gradient (bool): whether to use hydraulic gradients in SWEGNN
+        **base_model_kwargs: additional arguments forwarded to BaseFloodModel
+    """
     def __init__(self, num_node_features, num_edge_features, hid_features=32, K=2, n_GNN_layers=2, type_GNN="SWEGNN", 
                  mlp_layers=1, mlp_activation='prelu', gnn_activation='prelu', dropout=0, 
                  with_WL=True, normalize=True, with_filter_matrix=True, edge_mlp=True,
@@ -83,7 +78,18 @@ class GNN(BaseFloodModel):
                                      activation=mlp_activation, device=self.device)
 
     def _make_gnn(self, hidden_size, K_hops=1, n_GNN_layers=1, type_GNN='SWEGNN', **swegnn_kwargs):
-        """Builds GNN module"""
+        """Build a ModuleList of GNN convolution layers.
+
+        Args:
+            hidden_size (int): node feature dimension inside the GNN
+            K_hops (int): number of hops per convolution
+            n_GNN_layers (int): number of stacked convolution layers
+            type_GNN (str): graph operator type; 'SWEGNN', 'GNN_A', 'GNN_L', or 'GAT'
+            **swegnn_kwargs: additional keyword arguments forwarded to SWEGNN
+
+        Returns:
+            nn.ModuleList: list of GNN convolution layers
+        """
         convs = nn.ModuleList()
         for l in range(n_GNN_layers):
             if type_GNN == "GNN_L":
@@ -96,11 +102,18 @@ class GNN(BaseFloodModel):
                 convs.append(SWEGNN(hidden_size, hidden_size, self.num_edge_features, K=K_hops, 
                             device=self.device, **swegnn_kwargs))
             else:
-                raise("Only 'GNN_A', 'GNN_L', 'GAT', and 'SWEGNN' are valid for now")
+                raise ValueError("Only 'GNN_A', 'GNN_L', 'GAT', and 'SWEGNN' are valid for now")
         return convs
     
     def forward(self, graph):
-        """Build encoder-decoder block"""    
+        """Run encoder-processor-decoder forward pass on a graph batch.
+
+        Args:
+            graph (Data): PyG Data object with attributes x, edge_index, edge_attr
+
+        Returns:
+            Tensor, shape [N, out_dim]: predicted water variables for each node
+        """
         x = graph.x.clone()
         edge_index = graph.edge_index
         edge_attr = graph.edge_attr
@@ -108,16 +121,10 @@ class GNN(BaseFloodModel):
         # 1. Node and edge encoder
         if self.type_GNN == "SWEGNN" and self.edge_mlp:
             edge_attr = self.edge_encoder(edge_attr)
-        
-        x0 = x
-        x_s = x[:,:self.static_node_features-self.with_WL]
-        x_d = x[:,self.static_node_features-self.with_WL:]
 
-        if self.with_WL:
-            # Add water level as static input
-            WL = x_s[:,-1] + x_d[:,-self.out_dim]
-            x_s = torch.cat((x_s, WL.unsqueeze(-1)), 1)
-        
+        x0 = x
+        x_s, x_d = self._split_features(x)
+
         if self.type_GNN == "SWEGNN":
             x_s = self.static_node_encoder(x_s)
             x = x_d = self.dynamic_node_encoder(x_d)
@@ -152,52 +159,51 @@ class GNN(BaseFloodModel):
         return x
     
 class MSGNN(BaseFloodModel):
-    '''
-    Multi-Scale GNN encoder-processor-decoder
-    Each scale is processed by a separate GNN and separate scales are connected by intra-scale edges
+    """Multi-scale GNN where each scale has its own processor and scales are linked by intra-scale edges.
 
-    ------
-    node_features: int, number of features per node
-    num_edge_features: int, number of features per edge
-    num_scales: int, number of multi-scale graphs
-
-    hid_features: int (default=32), number of features per node (and edge) in the GNN layers
-    K: int or list, K-hop neighbourhood per scale (if int, same number of layers for all scales)
-    n_GNN_layers: int or list, number of GNN layers per scale (if int, same number of layers for all scales)
-    edge_mlp: bool (default=True), adds MLP as edge encoder (valid only for 'SWEGNN')
-    skip_connections: bool (default=True), adds skip connections across scales
-    learned_pooling: bool (default=False), adds learnable pooling
-
-    mlp_layers: int (default=2), number of MLP layers in the GNN processor
-    mlp_activation: str (default='prelu'), activation function for the MLP layers
-    gnn_activation: str (default='tanh'), activation function for the GNN layers
-    with_WL: bool (default=False), adds water level as static input
-    normalize: bool (default=True), normalize learned fluxes in SWE-GNN
-    with_filter_matrix: bool (default=True), adds filter matrix to the GNN processor (i.e., adds the H in the graph convolution S*X*H)
-    with_gradient: bool (default=True), adds the gradient of the water variables in the GNN processor
-
-    base_model_kwargs: dict, additional arguments for the BaseFloodModel, e.g., learned_residuals, seed, residuals_base, etc.
-    '''
+    Args:
+        num_node_features (int): number of input node features
+        num_edge_features (int): number of input edge features
+        num_scales (int): number of resolution scales
+        hid_features (int): hidden feature dimension
+        K (int or list): K-hop neighbourhood per scale; int applies the same value to all scales
+        mlp_layers (int): number of layers in MLP blocks
+        mlp_activation (str): activation function for MLP blocks
+        gnn_activation (str): activation function applied after the final processor step
+        learned_pooling (bool): whether to use a learnable pooling MLP
+        skip_connections (bool): whether to add skip connections from fine to coarse during up-pass
+        with_WL (bool): whether to append water level as static input
+        normalize (bool): whether to normalise learned fluxes in SWEGNN
+        with_filter_matrix (bool): whether to include a filter matrix H in the graph convolution
+        edge_mlp (bool): whether to apply an MLP edge encoder
+        with_gradient (bool): whether to use hydraulic gradients in SWEGNN
+        upwind_mode (bool): whether to apply upwind masking to hydraulic gradients
+        **base_model_kwargs: additional arguments forwarded to BaseFloodModel
+    """
     def __init__(self, num_node_features, num_edge_features, num_scales, hid_features=32, K=2, 
                  mlp_layers=2, mlp_activation='prelu', gnn_activation='tanh', 
                  learned_pooling=False, skip_connections=True,
                  with_WL=False, normalize=True, with_filter_matrix=True, edge_mlp=True,
-                 with_gradient=True, **base_model_kwargs):
+                 with_gradient=True, upwind_mode=False, **base_model_kwargs):
         super(MSGNN, self).__init__(**base_model_kwargs)
         self.type_model = "MSGNN"
         self.hid_features = hid_features
         self.num_node_features = num_node_features
+        self.num_edge_features = num_edge_features
+        self.num_scales = num_scales
         self.edge_mlp = edge_mlp
         self.with_WL = with_WL
-        self.num_scales = num_scales        
         self.gnn_activation = gnn_activation
-        self.dynamic_node_features = self.previous_t*self.NUM_WATER_VARS
+        self.upwind_mode = upwind_mode
+        self.with_gradient = with_gradient
+        self.dynamic_node_features = self.previous_t*NUM_WATER_VARS
         self.static_node_features = num_node_features - self.dynamic_node_features + self.with_WL
         self.learned_pooling = learned_pooling
         self.skip_connections = skip_connections
         self.K = [K]*num_scales if isinstance(K, int) else K
-        self.K = self.K + self.K[::-1][1:] # add reverse K_hops for the coarse to fine
-        assert len(self.K) == num_scales*2-1, "K must be an int or a list of length num_scales or num_scales*2-1"
+        if len(self.K) != num_scales*2-1:
+            self.K = self.K + self.K[::-1][1:] # add reverse K_hops for the coarse to fine
+            assert len(self.K) == num_scales*2-1, "K must be an int or a list of length num_scales or num_scales*2-1"
         
         # Edge encoder
         if edge_mlp:
@@ -229,8 +235,8 @@ class MSGNN(BaseFloodModel):
         self.gnn_processor = nn.ModuleList([
             SWEGNN(hid_features, hid_features, num_edge_features, K=K, 
                     n_layers=mlp_layers, activation=mlp_activation, bias=True, 
-                    normalize=normalize, with_filter_matrix=with_filter_matrix, 
-                    with_gradient=with_gradient)
+                    normalize=normalize, with_filter_matrix=with_filter_matrix, upwind_mode=upwind_mode,
+                    with_gradient=with_gradient) if K > 0 else Copy_GNN()
                     for K in self.K])
 
         self.gnn_activation = activation_functions(gnn_activation, device=self.device)
@@ -240,14 +246,17 @@ class MSGNN(BaseFloodModel):
                                      activation=mlp_activation, device=self.device)
         
     def _pooling(self, x, row_fine, col_coarse, reduce='mean', learnable=False):
-        """Pool multiscale attributes from finest to coarsest scale
-        
+        """Pool node features from a fine scale to a coarse scale.
+
         Args:
-            x (Tensor): node features
-            row_fine (Tensor): row indices of the finest scale
-            col_coarse (Tensor): column indices of the coarsest scale
-            reduce (str, optional): reduce operation. Defaults to 'mean'.
-            learnable (bool, optional): learnable pooling. Defaults to False.
+            x (Tensor, shape [N, F]): node feature matrix
+            row_fine (Tensor, shape [E]): fine-scale source node indices
+            col_coarse (Tensor, shape [E]): coarse-scale target node indices
+            reduce (str): scatter reduction; e.g. 'mean' or 'sum'
+            learnable (bool): whether to use the learned pooling MLP
+
+        Returns:
+            Tensor, shape [N, F]: node features after pooling into coarse positions
         """
         if learnable:
             e_ij = self.pooling_mlp(torch.cat((x[row_fine], x[col_coarse]), -1))
@@ -257,15 +266,26 @@ class MSGNN(BaseFloodModel):
         return x
     
     def _create_scale_mask(self, data):
-        """Creates a mask of shape N with entry i for each scale i
-        
-        mask = e.g., [0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, ...]
+        """Return a per-node integer mask indicating which scale each node belongs to.
+
+        Args:
+            data (Data): PyG Data object containing node_ptr and graph metadata
+
+        Returns:
+            Tensor, shape [N]: integer scale index for each node (e.g. [0, 0, 1, 1, 2, ...])
         """
         num_nodes = data.x.size(0)
         return create_scale_mask(num_nodes, self.num_scales, data.node_ptr, data, device=self.device)
     
     def forward(self, graph):
-        """Multiscale encoder-processor-decoder"""    
+        """Run multiscale encoder-processor-decoder forward pass.
+
+        Args:
+            graph (Data): PyG Data object with x, edge_index, edge_attr, edge_ptr, intra_mesh_edge_index, intra_edge_ptr
+
+        Returns:
+            Tensor, shape [N, out_dim]: predicted water variables for each node
+        """
         x = graph.x.clone()
         edge_index = graph.edge_index
         edge_attr = graph.edge_attr
@@ -273,23 +293,18 @@ class MSGNN(BaseFloodModel):
         edge_ptr = graph.edge_ptr
         intra_mesh_edge_index = graph.intra_mesh_edge_index
         intra_edge_ptr = graph.intra_edge_ptr
-        
+        self.device = x.device
+
         # Create scale mask
         mask = self._create_scale_mask(graph)
         
         # 1. Node and edge encoder
         if self.edge_mlp:
             edge_attr = self.edge_encoder(edge_attr)
-        
-        x0 = x
-        x_s = x[:,:self.static_node_features-self.with_WL]
-        x_d = x[:,self.static_node_features-self.with_WL:]
 
-        if self.with_WL:
-            # Add water level as static input
-            WL = x_s[:,-1] + x_d[:,-self.out_dim]
-            x_s = torch.cat((x_s, WL.unsqueeze(-1)), 1)
-        
+        x0 = x
+        x_s, x_d = self._split_features(x)
+
         x_s = self.static_node_encoder(x_s)
         x_d = self.dynamic_node_encoder(x_d)
 
@@ -345,20 +360,24 @@ class MSGNN(BaseFloodModel):
         x = torch.relu(x)
         
         # Mask very small water depth
-        x = self._mask_small_WD(x, epsilon=0.0001)
+        x = self._mask_small_WD(x, epsilon=0.001)
 
         return x
 
 class SWEGNN(nn.Module):
-    r"""Shallow Water Equations inspired Graph Neural Network
+    """Shallow Water Equations-inspired graph convolution layer.
 
-    .. math::
-        \mathbf{x}^{\prime}_{di} = \mathbf{x}_{di} + \sum_{j \in \mathcal{N}(i)} 
-        \mathbf{s}_{ij} \odot (\mathbf{x}_{dj} - \mathbf{x}_{di})
-
-        \mathbf{s}_{ij} = MLP \left(\mathbf{x}_{si}, \mathbf{x}_{sj},
-        \mathbf{x}_{di}, \mathbf{x}_{dj},
-        \mathbf{e}_{ij}\right)
+    Args:
+        static_node_features (int): dimension of static node features
+        dynamic_node_features (int): dimension of dynamic node features
+        edge_features (int): dimension of edge features
+        K (int): number of message-passing hops
+        normalize (bool): whether to L2-normalise learned flux vectors
+        with_filter_matrix (bool): whether to apply a linear filter matrix at each hop
+        with_gradient (bool): whether to use hydraulic gradients in the node update
+        upwind_mode (bool): whether to zero negative hydraulic gradients (upwind scheme)
+        device (str): compute device
+        **mlp_kwargs: additional keyword arguments forwarded to make_mlp
     """
     def __init__(self, static_node_features: int, dynamic_node_features: int, edge_features: int, 
                  K: int = 2, normalize=True, with_filter_matrix=True, with_gradient=True,
@@ -389,12 +408,17 @@ class SWEGNN(nn.Module):
                 x_d: Tensor, 
                 edge_index: Tensor, 
                 edge_attr: Optional[Tensor]=None) -> Tensor:
-        '''
-        x_s: static node features
-        x_d: dynamic node features
-        edge_index: edge indices
-        edge_attr: edge features
-        '''
+        """Apply K hops of SWE-inspired message passing.
+
+        Args:
+            x_s (Tensor, shape [N, F_s]): static node features
+            x_d (Tensor, shape [N, F_d]): dynamic node features
+            edge_index (Tensor, shape [2, E]): edge connectivity
+            edge_attr (Tensor, shape [E, F_e] or None): edge features
+
+        Returns:
+            Tensor, shape [N, F_d]: updated dynamic node features
+        """
         row = edge_index[0]
         col = edge_index[1]
         num_nodes = x_d.size(0)
@@ -449,3 +473,29 @@ class SWEGNN(nn.Module):
             self.__class__.__name__, self.edge_output_size, 
             self.edge_features, self.K, self.with_filter_matrix,
             self.with_gradient)
+    
+class Copy_GNN(nn.Module):
+    """Copy GNN layer that does nothing"""
+    def __init__(self):
+        super().__init__()
+
+    def forward(self,
+                x_s: Tensor,
+                x_d: Tensor,
+                edge_index: Tensor,
+                edge_attr: Optional[Tensor]=None) -> Tensor:
+        """Return a copy of dynamic node features unchanged.
+
+        Args:
+            x_s (Tensor, shape [N, F_s]): static node features (unused)
+            x_d (Tensor, shape [N, F_d]): dynamic node features
+            edge_index (Tensor, shape [2, E]): edge connectivity (unused)
+            edge_attr (Tensor or None): edge features (unused)
+
+        Returns:
+            Tensor, shape [N, F_d]: copy of x_d
+        """
+        return x_d.clone()
+
+    def __repr__(self):
+        return '{} (this layer does nothing)'.format(self.__class__.__name__)

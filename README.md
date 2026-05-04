@@ -1,32 +1,26 @@
-# mSWE-GNN (Repository for paper "Multi-scale hydraulic graph neural networks for flood modelling")
-(Version 1.1 - Nov. 28th, 2024)
+# mSWE-GNN (Repository for paper "Probabilistic flood hazard mapping for dike-breach floods via graph neural networks")
+(Version 1.2 - Apr. 8th, 2026)
 
-![Architecture](Architecture.png)
+![Architecture](overview.png)
 
 ## Overview
 
-For reproducing the paper's results, explore **plot_results.ipynb**
+The dataset we used to trained the models is unfortunately not shared (if you can contact me, we can discuss it).
+However, you can still run the trained model on the case study in [prob_test.ipynb](prob_test.ipynb)
 
-For training the model run **main.py**
+In theory, **main.py** and **main.ipynb** are used to trained the model.
 
-For training and exploring the model, run **main.ipynb**
-
-For testing a model, run **test_model.py**
-
-Both **main.py** and **main.ipynb** use a **config.yaml** as reference configuration file.
+**test_model.py** and **prob_test_model.py** are used to test the model.
 
 The repository is divided in the following folders:
 
-* **database:** Creation of hydrodynamic simulations (**D-Hydro simulations.ipynb**) [requires the license and installation of "D-HYDRO Suite 1D2D"] and conversion of the NETCDF output files into PyTorch Geometric-friendly data (**create_dataset.ipynb**).
-Also contains the output of the hydrodynamic simulations (**raw_datasets**: for downloading the datasets go to <https://doi.org/10.5281/zenodo.13326595>). This is converted into Pickle files that are then stored and separated into training and testing datasets in **datasets**.
+* **database:** mesh classes and functions, as well as base data for dike ring 41.
 
 * **models:**  Deep learning models developed for surrogating the hydraulic one: contains a base class with common inputs and functions and one for the SWE-GNN and mSWE-GNN models.
 
-* **results:** Contains results and trained models of the mSWE-GNN Pareto front, used for the paper's results.
+* **training:** loss and training functions.
 
-* **training:** Contains loss and training functions.
-
-* **utils:** Contains Python functions for loading, creating and scaling the dataset. There are also other miscellaneous functions and visualization functions.
+* **utils:** Python functions for loading, creating and scaling the dataset. There are also other miscellaneous functions and visualization functions.
 
 ## Environment setup
 

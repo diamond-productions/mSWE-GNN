@@ -1,48 +1,50 @@
 # dataset creation parameters
 dataset_parameters:
-  dataset_folder    : 'database/datasets'
-  temporal_res      : 120
-  train_dataset_name: 'multiscale_mesh_dataset'
-  train_size        : 80
-  val_prcnt         : 0.25
-  test_dataset_name : 'multiscale_mesh_dataset'
-  seed              : 381
+  dataset_folder    : 'database/datasets/polygon_meshes'
+  temporal_res      : 480
+  train_dataset_name: ['dk41']
+  val_size          : 0
+  save_on_gpu       : False
+  test_dataset_name : ['dk41']
+  seed              : 0
 
 # Scaler options: null, 'minmax', 'minmax_neg', or 'standard'
 scalers: 
-  DEM_scaler        : null
-  slope_scaler      : null
+  DEM_scaler        : 'standard'
+  roughness_scaler  : null
   area_scaler       : 'standard'
   edge_length_scaler: 'standard'
-  edge_slope_scaler : null
   WD_scaler         : null
   V_scaler          : null
 
 # node features
 selected_node_features :
-  slopes        : False
-  slope         : False
   area          : True
   DEM           : True
+  roughness     : True
+  canal_mask    : True
+  lakes_mask    : True
 
 # edge features
 selected_edge_features : 
-  edge_length           : True
-  edge_relative_distance: False
-  edge_slope            : False
+  edge_length   : True
+  edge_weir     : True
+  edge_slope    : False
 
 # temporal training dataset
 temporal_dataset_parameters:
-  rollout_steps : 6
+  rollout_steps : 5
   previous_t    : 3
+  future_t      : 1
   time_start    : 0
   time_stop     : -1 #*int(60/temporal_res)
+  save_on_gpu   : False
 
 # Models hyperparameters
 models:
   model_type              : 'MSGNN'
   hid_features            : 64
-  mlp_layers              : 3
+  mlp_layers              : 2
   seed                    : 666
   learned_residuals       : True
   mlp_activation          : 'prelu'
@@ -52,30 +54,33 @@ models:
   with_filter_matrix      : True
   with_gradient           : True
   with_WL                 : True
-  K                       : 4
-  # MSGNN parameters
+  K                       : [0,3,6,5,2]
   learned_pooling         : False
   skip_connections        : True
-            
+
 trainer_options:
   type_loss             : 'RMSE'
   only_where_water      : True
-  batch_size            : 4
+  batch_size            : 2
+  multiscale_loss_scaler: [5,1,1]
   conservation          : 0
   velocity_scaler       : 7
-  curriculum_epoch      : 20
-  patience              : 100
-  max_epochs            : 200
+  curriculum_mode       : 'epoch'
+  curriculum_epoch      : 15
+  patience              : 50
+  max_epochs            : 100
 
 # learning rate
 lr_info:
-  learning_rate   : 0.003
+  learning_rate   : 0.002
   weight_decay    : 0
   gamma           : 0.7
-  step_size       : 20
+  step_size       : 10
 
 # temporal_test_dataset_parameters:
-#   time_start  : 1
+#   time_start  : 0
 #   time_stop   : -1
 
-saved_model: 'results/Pareto_front/models/K4_F64.h5' # specify the model to be tested 
+# saved_model: 'results/atomic-music-2404/models/model_77.ckpt' # specify the model to be tested
+# save_folder: 'results/atomic-music-2404' # specify the folder to save the results
+# num_scenarios_per_location: 1 # number of scenarios to be generated for each location
