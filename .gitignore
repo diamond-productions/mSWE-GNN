@@ -4,7 +4,17 @@
 *.txt
 *.pol
 *.nc
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+*.h5
 __pycache__
 *.pyc
 lightning_logs
 wandb
+
+# pixi environments
+.pixi/*
+!.pixi/config.toml

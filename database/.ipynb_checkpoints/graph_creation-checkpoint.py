@@ -25,7 +25,7 @@ from meshkernel import py_structures, DeleteMeshOption
 def center_grid_graph(dim1, dim2, grid_size=1):
     '''
     Create graph from a rectangular grid of dimensions dim1 x dim2
-    Returns networkx graph connecting the grid centers and corresponding
+    Returns networkx graph connecting the grid centers and corresponding 
     node positions
     ------
     dim1: int
@@ -36,7 +36,7 @@ def center_grid_graph(dim1, dim2, grid_size=1):
     G = nx.grid_2d_graph(dim1, dim2, create_using=nx.DiGraph)
     # for the position, it is assumed that they are located in the centre of each grid
     pos = {i:((x+0.5)*grid_size,(y+0.5)*grid_size) for i, (x,y) in enumerate(G.nodes())}
-
+    
     #change keys from (x,y) format to i format
     mapping = dict(zip(G, range(0, G.number_of_nodes())))
     G = nx.relabel_nodes(G, mapping)
@@ -71,9 +71,9 @@ def graph_from_mesh(mesh):
     return graph, pos
 
 def sample_points_from_grid(points, grid_size):
-    """Sample points from a regular square grid.
+    """Sample points from a regular square grid. 
     Each square in the grid will have a single point selected at random.
-
+    
     Args:
         points (np.array): Array of points to sample from, shape (n_points, 2)
         grid_size (float): Size of each square in the grid
@@ -95,7 +95,7 @@ def sample_points_from_grid(points, grid_size):
             if len(possible_points) > 0:
                 # Generate random indices within the square
                 indices = np.random.randint(0, len(possible_points), size=min(num_points, len(possible_points)))
-
+                
                 # Add the selected points to the list
                 selected_points.extend(possible_points[indices])
 
@@ -146,7 +146,7 @@ def close_polygon(points):
     return points
 
 def generate_polygon(center: Tuple[float, float], avg_radius: float,
-                     irregularity: float, spikiness: float,
+                     irregularity: float, spikiness: float, 
                      num_vertices: int, seed: float, ellipticality: float=1) -> List[Tuple[float, float]]:
     """
     TAKEN FROM: https://stackoverflow.com/questions/8997099/algorithm-to-generate-random-2d-polygon
@@ -160,14 +160,14 @@ def generate_polygon(center: Tuple[float, float], avg_radius: float,
         center (Tuple[float, float]):
             a pair representing the center of the circumference used to generate the polygon.
         avg_radius (float):
-            the average radius (distance of each generated vertex to the center of the circumference)
+            the average radius (distance of each generated vertex to the center of the circumference) 
             used to generate points with a normal distribution.
         irregularity (float):
             variance of the spacing of the angles between consecutive vertices.
         spikiness (float):
             variance of the distance of each vertex to the center of the circumference.
         ellipticality (float):
-            ratio between the major and minor axis of the ellipse used to generate the polygon.
+            ratio between the major and minor axis of the ellipse used to generate the polygon.            
         num_vertices (int):
             the number of vertices of the polygon.
     """
@@ -310,7 +310,7 @@ def check_coarsening(points, boundary_nodes):
 
     return inside
 
-def generate_random_polygon_with_dike(save_polygon=False, avg_radius=100, irregularity=0.5,
+def generate_random_polygon_with_dike(save_polygon=False, avg_radius=100, irregularity=0.5, 
                                       spikiness=0.2, seed=42, num_vertices=(20,30), ellipticality=(1,2),
                                       dike_corners=None, min_dike_length=0.5, **dike_options):
     """Generates a polygon with inside it a linear dike element"""
@@ -319,7 +319,7 @@ def generate_random_polygon_with_dike(save_polygon=False, avg_radius=100, irregu
     num_vertices = np.random.randint(num_vertices[0], num_vertices[1])
     ellipticality = np.random.uniform(ellipticality[0], ellipticality[1])
     avg_radius = avg_radius/ellipticality
-    polygon = generate_polygon(center=(avg_radius, avg_radius), avg_radius=avg_radius,
+    polygon = generate_polygon(center=(avg_radius, avg_radius), avg_radius=avg_radius, 
                                irregularity=irregularity, spikiness=spikiness,
                                ellipticality=ellipticality,
                                num_vertices=num_vertices, seed=seed)
@@ -329,7 +329,7 @@ def generate_random_polygon_with_dike(save_polygon=False, avg_radius=100, irregu
 
     vertices = np.array(polygon.exterior.coords)
     vertices = equidistant_perimiter(vertices)
-
+    
     if dike_corners is None:
         dike_length = 0
         while dike_length < min_dike_length:
@@ -356,7 +356,7 @@ def plot_faces(mesh, ax=None, face_value=None, **kwargs):
         face = np.stack((face_nodes_x, face_nodes_y)).T
         node_position += num_nodes
         patches.append(mpl.patches.Polygon(face, closed=True))
-
+        
     collection = PatchCollection(patches, **kwargs)
     collection.set_array(face_value)
     ax.add_collection(collection)
@@ -367,7 +367,7 @@ def plot_faces(mesh, ax=None, face_value=None, **kwargs):
 
 def plot_mesh(mesh, ax=None, node_size=2, **plt_kwargs):
     ax = ax or plt.gca()
-
+    
     graph, pos = graph_from_mesh(mesh)
 
     nx.draw(graph, pos, ax=ax, node_size=node_size, **plt_kwargs)
@@ -376,16 +376,16 @@ def plot_mesh(mesh, ax=None, node_size=2, **plt_kwargs):
 
 def plot_mesh_and_dual(mesh, ax=None, **plt_kwargs):
     ax = ax or plt.gca()
-
+    
     graph, pos = graph_from_mesh(mesh)
 
     nx.draw(graph, pos, ax=ax, style='dotted', node_size=0, width=0.2)
 
     dual_graph, pos = dual_graph_from_mesh(mesh)
-
+    
     node_size = 4000/dual_graph.number_of_nodes()**0.9
     nx.draw(dual_graph, pos, ax=ax, node_size=node_size, width=0.7, **plt_kwargs)
-
+    
     ax.set_xlim(mesh.node_x.min(), mesh.node_x.max())
     ax.set_ylim(mesh.node_y.min(), mesh.node_y.max())
 
@@ -393,15 +393,15 @@ def plot_mesh_and_dual(mesh, ax=None, **plt_kwargs):
 
 def plot_multiscale_mesh_properties(meshes, with_area=True, **kwargs):
     """Plot the mesh properties of a multiscale mesh.
-
+    
     ----------
     meshes : list of Mesh objects
     with_area : bool, plot the histogram of the face areas"""
     number_of_multiscales = len(meshes)
-
+    
     height_ratios = [1, 0.65] if with_area else [1]
 
-    fig, axs = plt.subplots(1+with_area, number_of_multiscales, figsize=(number_of_multiscales*4,4+with_area*2),
+    fig, axs = plt.subplots(1+with_area, number_of_multiscales, figsize=(number_of_multiscales*4,4+with_area*2), 
                             gridspec_kw={'height_ratios': height_ratios})
     fig.suptitle("Mesh faces properties", fontsize=16)
 
@@ -439,7 +439,7 @@ def get_barycenter(x, y):
     '''Returns barycenter given x and y coordinates'''
     assert x.shape == y.shape, f"Input x and y have incompatible dimensions \n\
                                 x: {x.shape}, y: {y.shape}"
-
+    
     if x.ndim == 1:
         length = len(x)
         sum_x = np.sum(x)
@@ -460,12 +460,12 @@ def create_mesh_triangle(vertices, segments=None, holes=None, max_area=5, max_sm
         raise ValueError("Mesh not computed. Triangle doesn't like hard restrictions.")
 
     mesh_inputs = {'vertices': vertices}
-
+    
     if segments is not None:
         mesh_inputs['segments'] = segments
     if holes is not None:
         mesh_inputs['holes'] = holes
-
+        
     mesh = tr.triangulate(mesh_inputs, f'cq{max_smallest_mesh_angle}pena{max_area}iD')
 
     return mesh
@@ -473,7 +473,7 @@ def create_mesh_triangle(vertices, segments=None, holes=None, max_area=5, max_sm
 def create_mesh_dhydro(polygon_file='random_polygon.pol', number_of_multiscales=4,
                        for_simulation=True):
     '''Creates a fine mesh or a multiscale mesh using meshkernel
-
+    
     ------
     polygon_file: str, path-like
         path to the polygon file
@@ -500,23 +500,23 @@ def create_mesh_dhydro(polygon_file='random_polygon.pol', number_of_multiscales=
 
     for i in range(number_of_multiscales):
         mk.mesh2d_compute_orthogonalization(ProjectToLandBoundaryOption(0), OrthogonalizationParameters(
-                    outer_iterations=25, boundary_iterations=25, inner_iterations=25,
+                    outer_iterations=25, boundary_iterations=25, inner_iterations=25, 
                     orthogonalization_to_smoothing_factor=0.975),
                     boundary_polygon, boundary_polygon)
-
+        
         if i == number_of_multiscales-1:
             mk.mesh2d_delete_small_flow_edges_and_small_triangles(
             small_flow_edges_length_threshold=0.1, min_fractional_area_triangles=2.0)
-
+            
         mesh = Mesh()
         mesh._import_from_meshkernel(mk)
         meshes.append(mesh)
 
         if i < number_of_multiscales-1:
-            refinement_parameters = MeshRefinementParameters(refine_intersected=True, min_edge_size=0.5,
+            refinement_parameters = MeshRefinementParameters(refine_intersected=True, min_edge_size=0.5, 
                                                         max_refinement_iterations=1, smoothing_iterations=5)
             mk.mesh2d_refine_based_on_polygon(boundary_polygon, refinement_parameters)
-
+        
     if for_simulation:
         output_mesh2d = mk.mesh2d_get()
 
@@ -660,7 +660,7 @@ class Mesh(object):
             index of the edges that have boundary conditions
         extra_face_BC: np.array, shape (num_extra_faces_BC,)
             index of the faces that are in the boundary but with no boundary conditions
-
+        
         -------
         Updates the following attributes:
         dual_edge_index: removes the edges that are in the boundary but with no boundary conditions
@@ -703,11 +703,11 @@ class Mesh(object):
 
     def _import_from_meshkernel(self, meshkernel_mesh):
         """Import mesh from meshkernel Mesh2d object
-
+        
         Example to create a Mesh2d object:
         mk = MeshKernel()
         mk.mesh2d_make_rectilinear_mesh(0, 0, 100, 100, 10, 10)
-
+        
         mesh = Mesh()
         mesh._import_from_meshkernel(mk)
         """
@@ -717,13 +717,13 @@ class Mesh(object):
         self.node_x = mesh.node_x
         self.node_y = mesh.node_y
         self.node_xy = np.stack((self.node_x, self.node_y),-1)
-
+        
         self.face_x = mesh.face_x
         self.face_y = mesh.face_y
 
         self.edge_index = mesh.edge_nodes.reshape(-1,2).T
         self.dual_edge_index = mesh.edge_faces.reshape(-1,2).T
-
+        
         extra_face_bnd_mask = self.dual_edge_index[1,:] == -1
         self.face_bnd = self.dual_edge_index[0,extra_face_bnd_mask]
         self.dual_edge_index = self.dual_edge_index[:,~extra_face_bnd_mask]
@@ -738,8 +738,8 @@ class Mesh(object):
         boundary_edge = np.stack([boundary_nodes_ids[i:i+2] for i in range(len(boundary_nodes_ids)-1)]).T
         # boundary_nodes_ids = np.array([i for i in range(len(self.boundary_nodes)-1)])
         # boundary_edge = np.array([[i, (i+1)%len(boundary_nodes_ids)] for i in boundary_nodes_ids]).T
-        boundary_edge_id = np.array([np.where((self.edge_index.T == edge).all(1) |
-                                              (self.edge_index[::-1].T == edge).all(1))[0]
+        boundary_edge_id = np.array([np.where((self.edge_index.T == edge).all(1) | 
+                                              (self.edge_index[::-1].T == edge).all(1))[0] 
                                               for edge in boundary_edge.T]).squeeze()
         self.edge_type = np.ones(self.edge_index.shape[1])
         self.edge_type[boundary_edge_id] = 3
@@ -749,7 +749,7 @@ class Mesh(object):
     def _import_from_Triangle(self, mesh):
         """Import mesh from triangle mesh object.
         The triangulation must have -en flags activated
-
+        
         Example:
         mesh_options = {"vertices": points}
         mesh = tr.triangulate(mesh_options, 'en')
@@ -797,15 +797,15 @@ class Mesh(object):
             length of each dual edge
         num_faces: int
             number of faces in the mesh
-        face_area: np.array
+        face_area: np.array 
             area of each face
         """
         # Nodes
         self.node_xy = np.stack((self.node_x, self.node_y),-1)
         self.num_nodes = self.node_x.shape[0]
         self.boundary_nodes = self.node_xy[np.array(list(set(self.edge_index.T[self.edge_type > 1].flatten())))]
-
-        # Edges
+        
+        # Edges        
         self.edge_relative_distance = self.node_xy[self.edge_index[1,:]] - self.node_xy[self.edge_index[0,:]]
         self.edge_length = np.linalg.norm(self.edge_relative_distance, axis=1)
 
@@ -856,7 +856,7 @@ class Mesh(object):
     def __repr__(self) -> str:
         return 'Mesh object with {} nodes, {} edges, {} faces, and {} dual edges'.format(
             self.node_x.shape[0], self.edge_index.shape[1], self.face_x.shape[0], self.dual_edge_index.shape[1])
-
+    
 class MultiscaleMesh(Mesh):
     """Mesh class for multiscale meshes"""
     def __init__(self):
@@ -888,22 +888,22 @@ class MultiscaleMesh(Mesh):
             edge_index.append(mesh.edge_index + edge_index[i].max() + 1)
             dual_edge_index.append(mesh.dual_edge_index + dual_edge_index[i].max() + 1)
             face_nodes.append(mesh.face_nodes + face_nodes[i].max() + 1)
-
+            
         self.edge_index = np.concatenate(edge_index, 1)
         self.dual_edge_index = np.concatenate(dual_edge_index, 1)
         self.face_nodes = np.concatenate(face_nodes)
-
+        
         # partition and compose the meshes
         self.get_partitioning(meshes)
         self.get_multiscale_BC(meshes)
         self.get_intra_edges(meshes)
 
         # adding derived attributes and ghost cells
-        self._get_derived_attributes()
+        self._get_derived_attributes()    
         self.added_ghost_cells = True
         self.ghost_cells_ids = np.concatenate([mesh.ghost_cells_ids + self.face_ptr[i] for i, mesh in enumerate(meshes)])
         self.ghost_node_ids = [self.node_x.shape[0]-j-1 for j in range((self.nodes_per_face[self.face_BC]-2).sum())][::-1]
-
+        
         dual_edge_index_BC = [meshes[0].dual_edge_index_BC]
         for i, mesh in enumerate(meshes[1:]):
             dual_edge_index_BC.append(mesh.dual_edge_index_BC + dual_edge_index_BC[i].max() + 1)
@@ -912,7 +912,7 @@ class MultiscaleMesh(Mesh):
     def get_intra_edges(self, meshes, add_edges=False):
         """Adds dual edges across each multiscale level
         based on the position of the fine mesh centers in the coarse mesh
-
+        
         Adds:
             intra_mesh_dual_edge_index (np.array): dual edge index of the intra mesh edges
 
@@ -935,7 +935,7 @@ class MultiscaleMesh(Mesh):
         if self.with_intra_edges:
             self.with_intra_edges = False
             if self.added_ghost_cells:
-                self.dual_edge_index = np.concatenate((self.dual_edge_index[:,:-self.intra_mesh_dual_edge_index.shape[1]-len(self.face_BC)],
+                self.dual_edge_index = np.concatenate((self.dual_edge_index[:,:-self.intra_mesh_dual_edge_index.shape[1]-len(self.face_BC)], 
                                                     self.dual_edge_index_BC), 1)
             else:
                 self.dual_edge_index = self.dual_edge_index[:,:-self.intra_mesh_dual_edge_index.shape[1]]
@@ -943,9 +943,9 @@ class MultiscaleMesh(Mesh):
             print("The mesh does not have intra mesh dual edges. You can add them with add_intra_edges(meshes)")
 
     def get_multiscale_BC(self, meshes):
-        """Get the boundary conditions for the multiscale mesh by
+        """Get the boundary conditions for the multiscale mesh by 
         stacking the boundary conditions of the meshes
-
+        
         Adds:
             edge_BC: index of boundary edges
             face_BC: index of boundary faces
@@ -958,7 +958,7 @@ class MultiscaleMesh(Mesh):
                 meshes = interpolate_BC_location_multiscale(meshes, edge_BC_mid)
                 meshes = [add_ghost_cells_mesh(mesh) for mesh in meshes]
             else:
-                raise ValueError("The meshes must have boundary conditions")
+                raise ValueError("The meshes must have boundary conditions")            
 
         self.edge_BC = np.concatenate([mesh.edge_BC + self.edge_ptr[i] for i, mesh in enumerate(meshes)])
         self.face_BC = np.concatenate([mesh.face_BC + self.face_ptr[i] for i, mesh in enumerate(meshes)])
@@ -966,7 +966,7 @@ class MultiscaleMesh(Mesh):
 
     def get_partitioning(self, meshes):
         """Get the partitioning of the meshes in the multiscale mesh
-
+        
         Adds:
             node_ptr: index of first node of each mesh
             face_ptr: index of first face of each mesh
@@ -976,14 +976,14 @@ class MultiscaleMesh(Mesh):
         self.face_ptr = np.cumsum([0] + [mesh.face_x.shape[0] for mesh in meshes])
         self.edge_ptr = np.cumsum([0] + [mesh.edge_index.shape[1] for mesh in meshes])
         self.dual_edge_ptr = np.cumsum([0] + [mesh.dual_edge_index.shape[1] for mesh in meshes])
-
+        
     def __repr__(self) -> str:
         return 'MultiscaleMesh object with {} meshes, {} nodes, {} edges, {} faces, and {} dual edges'.format(
             self.num_meshes, self.node_x.shape[0], self.edge_index.shape[1], self.face_x.shape[0], self.dual_edge_index.shape[1])
-
+    
 def rotate_mesh(mesh, angle):
     """Data augmentation: rotate the mesh by a given angle
-
+    
     Args:
         mesh (Mesh): mesh object
         angle (float): angle in degrees
@@ -996,7 +996,7 @@ def rotate_mesh(mesh, angle):
 
     rotated_mesh.node_x, rotated_mesh.node_y = np.dot(rot_matrix, np.array([mesh.node_x, mesh.node_y]))
     rotated_mesh.face_x, rotated_mesh.face_y = np.dot(rot_matrix, np.array([mesh.face_x, mesh.face_y]))
-
+    
     rotated_mesh._get_derived_attributes()
 
     return rotated_mesh
@@ -1016,7 +1016,7 @@ def get_slopes(coords, DEM, neighborhood_size=200, min_neighbours=5):
     radius_graph = radius_neighbors_graph(coords, neighborhood_size, mode='connectivity', include_self=False)
     KNN = kneighbors_graph(coords, min_neighbours, mode='connectivity', include_self=False)
 
-    for row in ((radius_graph.todense() + KNN.todense()) > 0):
+    for row in ((radius_graph.todense() + KNN.todense()) > 0):    
         A = np.column_stack((np.ones((row.sum(), 1)), coords[np.where(row)[1]]))
         b = DEM[np.where(row)[1]]
         coefficients, _, _, _ = lstsq(A, b)
@@ -1033,14 +1033,14 @@ def get_slopes(coords, DEM, neighborhood_size=200, min_neighbours=5):
 def reorder_dict(dict):
     '''Change the key of a dictionary and sorts it by values order'''
     new_dict = {}
-
+    
     #sort to exclude double values and order it
     dict = dict(sorted(dict.items()))
 
     #change keys from (x,y) format to i format
     for i, key in enumerate(dict.keys()):
         new_dict[i] = dict[key]
-
+        
     return new_dict
 
 def interpolate_variable(interpolated_points, points, value, method='nearest'):
@@ -1060,7 +1060,7 @@ def interpolate_variable(interpolated_points, points, value, method='nearest'):
         points = get_coords(points)
 
     interpolated_variable = griddata(points, value, interpolated_points, method=method)
-
+    
     # interpolate nan values
     mask = np.isnan(interpolated_variable)
     interpolated_variable[mask] = np.interp(np.flatnonzero(mask), np.flatnonzero(~mask), interpolated_variable[~mask])
@@ -1126,12 +1126,12 @@ def interpolate_multiscale_attributes(meshes, *attributes, method='nearest'):
     if len(meshes) == 1:
         print("Only one mesh in the list. No multiscale interpolation needed.")
         return attributes
-
+    
     fine_mesh = meshes[-1]
 
-    interpolated_attributes = [np.concatenate([interpolate_mesh_attributes(fine_mesh, coarse_mesh, attribute, method=method)
+    interpolated_attributes = [np.concatenate([interpolate_mesh_attributes(fine_mesh, coarse_mesh, attribute, method=method) 
                                 for coarse_mesh in meshes]) for attribute in attributes]
-
+    
     return interpolated_attributes
 
 def pool_multiscale_attributes(mesh, *attributes, reduce='mean'):
@@ -1146,7 +1146,7 @@ def pool_multiscale_attributes(mesh, *attributes, reduce='mean'):
     """
     assert isinstance(mesh, MultiscaleMesh), "mesh must be a MultiscaleMesh"
     assert mesh.num_meshes > 1, "mesh must contain at least 2 meshes"
-
+    
     coarse_to_fine = mesh.meshes[0].num_nodes < mesh.meshes[1].num_nodes
     attrs = []
     for attr in attributes:
@@ -1154,13 +1154,13 @@ def pool_multiscale_attributes(mesh, *attributes, reduce='mean'):
         for i in range(mesh.num_meshes-1):
             if coarse_to_fine:   # coarse to fine
                 row, col = torch.LongTensor(mesh.intra_mesh_dual_edge_index)[:,mesh.intra_edge_ptr[-2-i]:mesh.intra_edge_ptr[-1-i]]
-                pooled_attributes.append(scatter(src=pooled_attributes[-1][col-mesh.face_ptr[-2-i]],
-                                                index=row-mesh.face_ptr[-3-i], dim=0,
+                pooled_attributes.append(scatter(src=pooled_attributes[-1][col-mesh.face_ptr[-2-i]], 
+                                                index=row-mesh.face_ptr[-3-i], dim=0, 
                                                 dim_size=mesh.meshes[-2-i].num_faces, reduce=reduce))
             else:   # fine to coarse
                 row, col = torch.LongTensor(mesh.intra_mesh_dual_edge_index)[:,mesh.intra_edge_ptr[i]:mesh.intra_edge_ptr[i+1]]
-                pooled_attributes.append(scatter(src=pooled_attributes[-1][col-mesh.face_ptr[i]],
-                                                index=row-mesh.face_ptr[i+1], dim=0,
+                pooled_attributes.append(scatter(src=pooled_attributes[-1][col-mesh.face_ptr[i]], 
+                                                index=row-mesh.face_ptr[i+1], dim=0, 
                                                 dim_size=mesh.meshes[i+1].num_faces, reduce=reduce))
 
         pooled_attributes = torch.cat(pooled_attributes[::-1]) if coarse_to_fine else torch.cat(pooled_attributes)
@@ -1170,7 +1170,7 @@ def pool_multiscale_attributes(mesh, *attributes, reduce='mean'):
 
 def extract_single_scale_features_in_multimesh(mesh, scale, *features):
     """Extracts specified features at a single scale from a multiscale mesh.
-
+    
     scale (int) : scale at which the features are extracted.
     features (torch.tensor): features to extract (e.g., WD, DEM, etc.)
 
@@ -1196,9 +1196,9 @@ def find_closest_nodes(all_points, reference_point, top_n=3):
     return top
 
 def interpolate_BC_location_multiscale(meshes, edge_BC_mid):
-    """Find the location of the boundary condition edge for each multiscale mesh
+    """Find the location of the boundary condition edge for each multiscale mesh 
     by interpolation from the edge midpoints in the finest mesh
-
+    
     Updates:
     edge_index_BC: np.array, shape (num_edges_BC, 2)
         index of the edges that have boundary conditions
@@ -1218,8 +1218,8 @@ def interpolate_BC_location_multiscale(meshes, edge_BC_mid):
         while not is_there_edge_BC:
             possible_edges = np.array([find_closest_nodes(mesh.node_xy, edge, top_n=top_n) for edge in edge_BC_mid])
             mesh.edge_index_BC = np.array([[node for node in edge if (mesh.node_xy[node] == mesh.boundary_nodes).sum() == 2] for edge in possible_edges])
-            mesh.edge_BC = np.array([np.where(((edge == mesh.edge_index.T).sum(1) == 2) |
-                                            ((edge[::-1] == mesh.edge_index.T).sum(1) == 2))[0]
+            mesh.edge_BC = np.array([np.where(((edge == mesh.edge_index.T).sum(1) == 2) | 
+                                            ((edge[::-1] == mesh.edge_index.T).sum(1) == 2))[0] 
                                             for edge in mesh.edge_index_BC]).reshape(-1)
             if mesh.edge_BC.shape[0] == 1:
                 is_there_edge_BC = True
@@ -1227,7 +1227,7 @@ def interpolate_BC_location_multiscale(meshes, edge_BC_mid):
                 raise ValueError('No edge found')
             else:
                 top_n += 1
-
+        
         mesh.edge_type[mesh.edge_BC] = 2
         mesh.face_BC = find_face_BC(mesh)
 
@@ -1298,22 +1298,22 @@ def find_BC_other_nodes(mesh):
         # Add first element to simplify circular iterations
         face_nodes = np.concatenate((face_nodes, face_nodes[:1]))
 
-        face_BC_dual_edge_index = mesh.dual_edge_index[:,np.where(mesh.dual_edge_index == face)[1]]
+        face_BC_dual_edge_index = mesh.dual_edge_index[:,np.where(mesh.dual_edge_index == face)[1]] 
         face_BC_neighbours = face_BC_dual_edge_index[face_BC_dual_edge_index != face]
         face_nodes_BC_neighbours = get_face_nodes_mesh(mesh)[face_BC_neighbours,:mesh.nodes_per_face[face]]
 
         for i in range(mesh.nodes_per_face[face]):
             is_BC_edge = not any([face_nodes[i] in neighbour and face_nodes[i+1] in neighbour \
                             for neighbour in face_nodes_BC_neighbours])
-
+            
             # check that the edge is actually in the boundary edges
             edge = face_nodes[i:i+2]
             is_edge_in_BC = (((edge == mesh.edge_index_BC).sum(1) == 2) | ((edge[::-1] == mesh.edge_index_BC).sum(1) == 2)).any()
-
+            
             if is_BC_edge and is_edge_in_BC:
                 BC_edge_index.append(edge)
                 # adding the unique prevents duplicates that can happen in the case of a the starting point being the other node itself
-                the_other_node.append(np.unique(np.array([item for item in face_nodes if item not in edge])))
+                the_other_node.append(np.unique(np.array([item for item in face_nodes if item not in edge]))) 
 
     # assert (mesh.edge_index_BC[:,::-1] == np.array(BC_edge_index)).all(), "The boundary condition edges are not the same with the ones from DHYDRO"
 
@@ -1325,7 +1325,7 @@ def find_face_BC(mesh):
 
     for i, face_nodes in enumerate(get_face_nodes_mesh(mesh)):
         face_nodes = face_nodes[~np.isnan(face_nodes)]
-
+        
         # Add first element to simplify circular iterations
         face_nodes = np.concatenate((face_nodes, face_nodes[:1])).astype(int)
 
@@ -1339,7 +1339,7 @@ def find_face_BC(mesh):
 
 def add_ghost_cells_mesh(mesh):
     """Adds ghost cells to the mesh by mirroring the boundary faces and nodes w.r.t. the boundary edges
-
+    
     Updates:
     node_x, node_y: np.array, shape (num_nodes+num_ghost_nodes,)
     face_x, face_y: np.array, shape (num_faces+num_ghost_faces,)
@@ -1392,20 +1392,20 @@ def add_ghost_cells_mesh(mesh):
         mesh.face_y = np.concatenate((mesh.face_y, ghost_face_BC_xy[:,1]))
 
         mesh.nodes_per_face = np.concatenate((mesh.nodes_per_face, mesh.nodes_per_face[mesh.face_BC]))
-
+        
         # update edge_index and dual_edge_index after adding ghost cells
         # dual_edge_index is converted to undirected
-        mesh.dual_edge_index_BC, mesh.ghost_cells_ids = get_BC_edge_index(mesh.dual_edge_index,
+        mesh.dual_edge_index_BC, mesh.ghost_cells_ids = get_BC_edge_index(mesh.dual_edge_index, 
                                                                 mesh.face_BC, undirected_BC=False)
         mesh.dual_edge_index = np.concatenate((mesh.dual_edge_index, mesh.dual_edge_index_BC), 1)
         ghost_edge_index, ghost_face_nodes = get_ghost_nodes(mesh)
         mesh.edge_index = np.concatenate((mesh.edge_index, ghost_edge_index), 1)
-        mesh.edge_type = np.concatenate((mesh.edge_type, np.ones(ghost_edge_index.shape[1], dtype=np.int32)*4))
+        mesh.edge_type = np.concatenate((mesh.edge_type, np.ones(ghost_edge_index.shape[1], dtype=np.int32)*4))        
         mesh.face_nodes = np.concatenate((mesh.face_nodes, ghost_face_nodes))
-
+        
         mesh._get_derived_attributes()
         mesh.added_ghost_cells = True
-
+    
     else:
         print("Ghost cells already added. Skipping...")
 
@@ -1415,7 +1415,7 @@ def remove_ghost_cells(mesh):
     """Remove all ghost cells from the mesh
 
     PERFORMS IN-PLACE MODIFICATION OF THE MESH
-
+    
     Updates:
     node_x, node_y: np.array, shape (num_nodes,)
     face_x, face_y: np.array, shape (num_faces,)
@@ -1439,23 +1439,23 @@ def remove_ghost_cells(mesh):
         mesh.face_y = mesh.face_y[:-num_ghost_cells]
 
         mesh.nodes_per_face = mesh.nodes_per_face[:-num_ghost_cells]
-
+        
         mesh.dual_edge_index = mesh.dual_edge_index[:,:-num_ghost_cells]
-
+        
         mesh.edge_index = mesh.edge_index[:,:-(num_ghost_nodes+num_ghost_cells)]
         mesh.edge_type = mesh.edge_type[:-(num_ghost_nodes+num_ghost_cells)]
 
         mesh.face_nodes = mesh.face_nodes[:-num_face_nodes]
-
+        
         mesh._get_derived_attributes()
         mesh.added_ghost_cells = False
-
+    
     return mesh
 
 def remove_ghost_cells_multiscale(mesh):
     """Remove all ghost cells from a Multiscale mesh"""
     assert isinstance(mesh, MultiscaleMesh), "Input mesh must be a MultiscaleMesh"
-
+    
     new_meshes = [remove_ghost_cells(copy(m)) for m in mesh.meshes]
 
     new_mesh = MultiscaleMesh()
@@ -1466,7 +1466,7 @@ def remove_ghost_cells_multiscale(mesh):
 def add_ghost_cells_attributes(mesh, *attributes):
     '''Corrects attribute value at ghost cells'''
     assert mesh.added_ghost_cells, "This function must be executed after add_ghost_cells_mesh"
-
+    
     attribute_BC = [np.concatenate((attr, attr[mesh.face_BC]), axis=0) for attr in attributes]
 
     return attribute_BC
@@ -1474,7 +1474,7 @@ def add_ghost_cells_attributes(mesh, *attributes):
 def update_ghost_cells_attributes(mesh, *attributes):
     '''Corrects attribute value at ghost cells'''
     assert mesh.added_ghost_cells, "This function must be executed after add_ghost_cells_mesh"
-
+    
     for attr in attributes:
         attr[mesh.ghost_cells_ids] = attr[mesh.face_BC]
 
@@ -1543,23 +1543,23 @@ def convert_mesh_to_pyg(netcdf_file, DEM_file, BC, polygon_file=None, type_BC=2,
         data.edge_ptr = torch.LongTensor(mesh.dual_edge_ptr)
         data.intra_edge_ptr = torch.LongTensor(mesh.intra_edge_ptr)
         data.intra_mesh_edge_index = torch.LongTensor(mesh.intra_mesh_dual_edge_index)
-
+        
         # get multiscale attributes
         # mesh.DEM, WD, VX, VY = interpolate_multiscale_attributes(meshes, DEM, WD, VX, VY, method='nearest')
         mesh.DEM, WD, VX, VY = pool_multiscale_attributes(mesh, DEM, WD, VX, VY, reduce='mean')
         mesh.DEM = update_ghost_cells_attributes(mesh, mesh.DEM)[0] #correct ghost cells values after pooling
     else:
         mesh.DEM, WD, VX, VY = add_ghost_cells_attributes(mesh, mesh.DEM, WD, VX, VY)
-    # slope_x, slope_y = get_slopes(mesh.face_xy, mesh.DEM, neighborhood_size=neighborhood_size_slope,
+    # slope_x, slope_y = get_slopes(mesh.face_xy, mesh.DEM, neighborhood_size=neighborhood_size_slope, 
     #                                   min_neighbours=min_neighbours_slope)
-
+    
     data.DEM = torch.FloatTensor(mesh.DEM)
     data.WD = torch.FloatTensor(WD)
     data.VX = torch.FloatTensor(VX)
     data.VY = torch.FloatTensor(VY)
     # data.slopex = torch.FloatTensor(slope_x)
     # data.slopey = torch.FloatTensor(slope_y)
-
+    
     # Assign other data properties
     data.edge_index = torch.LongTensor(mesh.dual_edge_index)
     data.face_distance = torch.FloatTensor(mesh.dual_edge_length)
@@ -1570,7 +1570,7 @@ def convert_mesh_to_pyg(netcdf_file, DEM_file, BC, polygon_file=None, type_BC=2,
     data.area = torch.FloatTensor(mesh.face_area)
 
     data.mesh = mesh
-
+    
     data.node_BC = torch.IntTensor(mesh.ghost_cells_ids)
     data.edge_BC_length = torch.FloatTensor(mesh.edge_length[mesh.edge_BC])
     if with_multiscale:
@@ -1581,7 +1581,7 @@ def convert_mesh_to_pyg(netcdf_file, DEM_file, BC, polygon_file=None, type_BC=2,
 
     return data
 
-def create_mesh_dataset(dataset_folder, n_sim, start_sim=1,
+def create_mesh_dataset(dataset_folder, n_sim, start_sim=1, 
                         with_multiscale=False, number_of_multiscales=4,
                         neighborhood_size_slope=150, min_neighbours_slope=9):
     '''
@@ -1607,19 +1607,19 @@ def create_mesh_dataset(dataset_folder, n_sim, start_sim=1,
 
     for i in tqdm(range(start_sim,start_sim+n_sim)):
         netcdf_file = f'{dataset_folder}/Simulations/output_{i}_map.nc'
-        DEM_file = f"{dataset_folder}/DEM/DEM_{i}.xyz"
-        hydrograph_file = f"{dataset_folder}/Hydrograph/Hydrograph_{i}.txt"
-        polygon_file = f"{dataset_folder}/Geometry/Polygon_{i}.pol"
+        DEM_file = f"{dataset_folder}\\DEM\\DEM_{i}.xyz"
+        hydrograph_file = f"{dataset_folder}\\Hydrograph\\Hydrograph_{i}.txt"
+        polygon_file = f"{dataset_folder}\\Geometry\\Polygon_{i}.pol"
         BC = np.loadtxt(hydrograph_file)
         BC[:,0] /= 60 # convert to minutes
-
+        
         data = convert_mesh_to_pyg(netcdf_file, DEM_file, BC, polygon_file, type_BC=2,
                         with_multiscale=with_multiscale, number_of_multiscales=number_of_multiscales,
-                        neighborhood_size_slope=neighborhood_size_slope,
+                        neighborhood_size_slope=neighborhood_size_slope, 
                         min_neighbours_slope=min_neighbours_slope)
 
         mesh_dataset.append(data)
-
+    
     return mesh_dataset
 
 def invert_scale_ordering(data):
@@ -1627,7 +1627,7 @@ def invert_scale_ordering(data):
     Use this function on the pyg_dataset obtained in create_datasets"""
 
     assert isinstance(data.mesh, MultiscaleMesh), "This function is valid only for MultiscaleMesh datasets."
-
+    
     temp = Data()
 
     node_ptr = data.node_ptr
@@ -1692,12 +1692,12 @@ def save_database(dataset, name, out_path='datasets'):
     '''
     n_sim = len(dataset)
     path = f"{out_path}/{name}.pkl"
-
+    
     if os.path.exists(path):
         os.remove(path)
     elif not os.path.exists(out_path):
         os.mkdir(out_path)
-
+    
     pickle.dump(dataset, open(path, "wb" ))
-
+        
     return None
