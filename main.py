@@ -1,4 +1,5 @@
 # Libraries
+import argparse
 import time
 
 import lightning as L
@@ -256,8 +257,16 @@ def main(config):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Train mSWE-GNN model")
+    parser.add_argument(
+        "config",
+        type=str,
+        help="Path to the YAML configuration file",
+    )
+    args = parser.parse_args()
+
     # Read configuration file with parameters
-    cfg = read_config("config.yaml")
+    cfg = read_config(args.config)
 
     wandb_logger = WandbLogger(
         log_model=True,
