@@ -14,6 +14,8 @@ __pycache__
 *.pyc
 lightning_logs
 wandb
+results/.cache
+results/aim
 
 # pixi environments
 .pixi/*

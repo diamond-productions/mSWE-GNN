@@ -1,16 +1,18 @@
 # Libraries
 import argparse
+import os
 import time
+
+os.environ.setdefault("MPLCONFIGDIR", os.path.join("results", ".cache", "matplotlib"))
 
 import lightning as L
 import matplotlib.pyplot as plt
 import torch
+from aim.pytorch_lightning import AimLogger
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
-from lightning.pytorch.loggers import WandbLogger
 from torch_geometric.data import DataLoader
 
-import wandb
-from training.train import CurriculumLearning, DataModule, LightningTrainer
+from training.train import CurriculumLearning, DataModule, LightningTrainer, TestLossLogger
 from utils.dataset import (
     create_model_dataset,
     get_temporal_test_dataset_parameters,
@@ -19,10 +21,10 @@ from utils.dataset import (
 from utils.load import read_config
 from utils.miscellaneous import (
     SpatialAnalysis,
-    fix_dict_in_config,
     get_model,
     get_numerical_times,
     get_speed_up,
+    normalize_config,
 )
 from utils.visualization import PlotRollout
 
@@ -31,7 +33,29 @@ torch.backends.cudnn.benchmark = True
 torch.set_float32_matmul_precision("high")
 
 
-def main(config):
+def get_aim_logger(cfg):
+    aim_cfg = cfg.get("aim", {}) or {}
+    enabled = aim_cfg.get("enabled", os.getenv("AIM_ENABLED", "true"))
+    if isinstance(enabled, str):
+        enabled = enabled.lower() not in {"0", "false", "no", "off"}
+    if not enabled:
+        return False
+
+    logger_kwargs = {
+        "repo": aim_cfg.get("repo") or os.getenv("AIM_REPO") or "results/aim",
+        "experiment": aim_cfg.get("experiment")
+        or os.getenv("AIM_EXPERIMENT")
+        or "mSWE-GNN",
+    }
+
+    run_name = aim_cfg.get("run_name") or os.getenv("AIM_RUN_NAME")
+    if run_name:
+        logger_kwargs["run_name"] = run_name
+
+    return AimLogger(**logger_kwargs)
+
+
+def main(config, logger):
     L.seed_everything(config.models["seed"])
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -104,6 +128,14 @@ def main(config):
         val_dataset, rollout_steps=-1, **temporal_test_dataset_parameters
     )
 
+    temporal_test_dataset = to_temporal_dataset(
+        test_dataset, rollout_steps=-1, **temporal_test_dataset_parameters
+    )
+
+    test_dataloader = DataLoader(
+        temporal_test_dataset, batch_size=len(temporal_test_dataset), shuffle=False
+    )
+
     plmodule = LightningTrainer(
         model, lr_info, trainer_options, temporal_test_dataset_parameters
     )
@@ -116,7 +148,8 @@ def main(config):
 
     # Number of parameters
     total_parameteres = sum(p.numel() for p in model.parameters())
-    wandb.log({"total parameters": total_parameteres})
+    if logger:
+        logger.log_metrics({"total parameters": total_parameteres}, step=0)
 
     # Training
     # Define callbacks
@@ -124,11 +157,10 @@ def main(config):
         dirpath="lightning_logs/models", monitor="val_loss", mode="min", save_top_k=1
     )
     curriculum_callback = CurriculumLearning(max_rollout_steps, patience=5)
+    test_loss_logger = TestLossLogger(test_dataloader)
     early_stopping = EarlyStopping(
         "val_CSI_005", mode="max", patience=trainer_options["patience"]
     )
-    wandb_logger.watch(model, log="all", log_graph=False)
-
     # Load trained model
     plmodule_kwargs = {
         "model": model,
@@ -138,9 +170,10 @@ def main(config):
     }
 
     if "saved_model" in config:
-        model = plmodule.load_from_checkpoint(
+        plmodule = LightningTrainer.load_from_checkpoint(
             config["saved_model"], map_location=device, **plmodule_kwargs
         )
+        model = plmodule.model.to(device)
 
     # Define trainer
     trainer = L.Trainer(
@@ -150,10 +183,11 @@ def main(config):
         gradient_clip_val=1,
         precision="16-mixed",
         enable_progress_bar=True,
-        logger=wandb_logger,
+        logger=logger,
         callbacks=[
             checkpoint_callback,
             curriculum_callback,
+            test_loss_logger,
             early_stopping,
         ],
     )
@@ -162,7 +196,7 @@ def main(config):
     trainer.fit(plmodule, pldatamodule)
 
     # Load the best model checkpoint
-    plmodule = plmodule.load_from_checkpoint(
+    plmodule = LightningTrainer.load_from_checkpoint(
         checkpoint_callback.best_model_path, map_location=device, **plmodule_kwargs
     )
     model = plmodule.model.to(device)
@@ -182,14 +216,6 @@ def main(config):
     )
 
     # Rollout error and time
-    temporal_test_dataset = to_temporal_dataset(
-        test_dataset, rollout_steps=-1, **temporal_test_dataset_parameters
-    )
-
-    test_dataloader = DataLoader(
-        temporal_test_dataset, batch_size=len(temporal_test_dataset), shuffle=False
-    )
-
     start_time = time.time()
     predicted_rollout = trainer.predict(plmodule, dataloaders=test_dataloader)
     prediction_times = time.time() - start_time
@@ -205,9 +231,12 @@ def main(config):
 
     rollout_loss = spatial_analyser._get_rollout_loss(type_loss=type_loss)
     model_times = spatial_analyser.prediction_times
+    test_roll_loss_WD = rollout_loss.mean(0)[0].item()
+    test_roll_loss_V = rollout_loss.mean(0)[1:].mean().item()
+    test_loss_overall = rollout_loss.mean().item()
 
-    print("test roll loss WD:", rollout_loss.mean(0)[0].item())
-    print("test roll loss V:", rollout_loss.mean(0)[1:].mean().item())
+    print("test roll loss WD:", test_roll_loss_WD)
+    print("test roll loss V:", test_roll_loss_V)
 
     # Speed up
     avg_speedup, std_speedup = get_speed_up(numerical_times, model_times)
@@ -219,19 +248,25 @@ def main(config):
         f"test CSI_03: {spatial_analyser._get_CSI(water_threshold=0.3).nanmean().item()}"
     )
 
-    wandb.log(
-        {
-            "speed-up": avg_speedup,
-            "test roll loss WD": rollout_loss.mean(0)[0].item(),
-            "test roll loss V": rollout_loss.mean(0)[1:].mean().item(),
-            "test CSI_005": spatial_analyser._get_CSI(water_threshold=0.05)
-            .nanmean()
-            .item(),
-            "test CSI_03": spatial_analyser._get_CSI(water_threshold=0.3)
-            .nanmean()
-            .item(),
-        }
-    )
+    if logger:
+        completed_epoch = trainer.current_epoch
+        logger.log_metrics(
+            {
+                "speed-up": avg_speedup,
+                "test_loss_overall": test_loss_overall,
+                "test_roll_loss_WD_overall": test_roll_loss_WD,
+                "test_roll_loss_V_overall": test_roll_loss_V,
+                "test roll loss WD": test_roll_loss_WD,
+                "test roll loss V": test_roll_loss_V,
+                "test CSI_005": spatial_analyser._get_CSI(water_threshold=0.05)
+                .nanmean()
+                .item(),
+                "test CSI_03": spatial_analyser._get_CSI(water_threshold=0.3)
+                .nanmean()
+                .item(),
+            },
+            step=completed_epoch,
+        )
 
     fig, _ = spatial_analyser.plot_CSI_rollouts(water_thresholds=[0.05, 0.3])
     plt.savefig("results/CSI.png")
@@ -268,14 +303,7 @@ if __name__ == "__main__":
     # Read configuration file with parameters
     cfg = read_config(args.config)
 
-    wandb_logger = WandbLogger(
-        log_model=True,
-        # mode='disabled',
-        config=cfg,
-    )
+    logger = get_aim_logger(cfg)
+    config = normalize_config(cfg)
 
-    fix_dict_in_config(wandb)
-
-    config = wandb.config
-
-    main(config)
+    main(config, logger)

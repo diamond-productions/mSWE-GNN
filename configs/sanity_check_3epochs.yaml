@@ -1,3 +1,6 @@
+# Fast sanity-check config. Keeps the original dataset/model settings but limits
+# training to three epochs.
+
 # dataset creation parameters
 dataset_parameters:
     dataset_folder: "database/datasets"
@@ -64,8 +67,8 @@ trainer_options:
     conservation: 0
     velocity_scaler: 7
     curriculum_epoch: 20
-    patience: 100
-    max_epochs: 200
+    patience: 3
+    max_epochs: 3
 
 # learning rate
 lr_info:
@@ -80,9 +83,7 @@ lr_info:
 
 saved_model: "results/Pareto_front/models/K4_F64.h5" # specify the model to be tested
 
-# Optional Aim settings. Logs are written locally and can be viewed with:
-# pixi run aim up --repo results/aim
-# aim:
-#     repo: "results/aim"
-#     experiment: "mSWE-GNN"
-#     run_name: "K4_F64"
+aim:
+    repo: "results/aim"
+    experiment: "sanity-check"
+    run_name: "3-epochs"

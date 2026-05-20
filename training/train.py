@@ -184,6 +184,56 @@ class LightningTrainer(L.LightningModule):
         return [predicted_rollout[batch.ptr[i]:batch.ptr[i+1]] 
                 for i in range(batch.num_graphs)]
 
+class TestLossLogger(Callback):
+    def __init__(self, test_dataloader):
+        super().__init__()
+        self.test_dataloader = test_dataloader
+
+    @torch.no_grad()
+    def on_train_epoch_end(self, trainer, pl_module):
+        was_training = pl_module.training
+        pl_module.eval()
+        test_losses = []
+
+        for batch in self.test_dataloader:
+            batch = batch.to(pl_module.device)
+            predicted_rollout = rollout_test(pl_module.model, batch)
+            real_rollout = batch.y
+
+            if 'node_ptr' in batch.keys():
+                temp = adapt_batch_training(batch)
+                mask = pl_module.model._create_scale_mask(temp) == 0
+                predicted_rollout = predicted_rollout[mask]
+                real_rollout = real_rollout[mask]
+
+            test_losses.append(
+                get_rollout_loss(
+                    predicted_rollout,
+                    real_rollout,
+                    type_loss=pl_module.type_loss,
+                    only_where_water=pl_module.only_where_water,
+                ).mean()
+            )
+
+        if test_losses:
+            test_loss = torch.stack(test_losses).mean()
+            pl_module.log(
+                "test_loss",
+                test_loss,
+                on_step=False,
+                on_epoch=True,
+                prog_bar=True,
+            )
+            if trainer.logger:
+                epoch_metrics = {"epoch/test_loss": test_loss.detach().cpu().item()}
+                train_loss = trainer.callback_metrics.get("train_loss")
+                if train_loss is not None:
+                    epoch_metrics["epoch/train_loss"] = train_loss.detach().cpu().item()
+                trainer.logger.log_metrics(epoch_metrics, step=trainer.current_epoch)
+
+        if was_training:
+            pl_module.train()
+
 class DataModule(L.LightningDataModule):
     def __init__(self, temporal_train_dataset, temporal_val_dataset, 
                  batch_size: int = 8):

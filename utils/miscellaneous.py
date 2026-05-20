@@ -3,7 +3,6 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 from torch_geometric.utils import scatter
-from wandb import Config
 
 from database.graph_creation import MultiscaleMesh
 from utils.dataset import to_temporal_dataset, get_inflow_volume, create_scale_mask
@@ -227,20 +226,39 @@ def plot_line_with_deviation(time_vector, variable, with_minmax=False, ax=None, 
         ax.plot(df.max(1), color=color, linestyle='--', alpha=.5)
     return p
 
-def fix_dict_in_config(wandb):
-    config = dict(wandb.config)
-    for k, v in config.copy().items():
-        if '.' in k:
-            new_key = k.split('.')[0]
-            inner_key = k.split('.')[1]
-            if new_key not in config.keys():
-                config[new_key] = {}
-            config[new_key].update({inner_key: v})
-            del config[k]
-    
-    wandb.config = Config()
-    for k, v in config.items():
-        wandb.config[k] = v
+class ConfigDict(dict):
+    """Dictionary with attribute access for training configuration values."""
+
+    def __getattr__(self, key):
+        try:
+            return self[key]
+        except KeyError as exc:
+            raise AttributeError(key) from exc
+
+
+def _to_config_dict(value):
+    if isinstance(value, dict):
+        return ConfigDict({k: _to_config_dict(v) for k, v in value.items()})
+    if isinstance(value, list):
+        return [_to_config_dict(item) for item in value]
+    return value
+
+
+def normalize_config(config):
+    """Return a nested config object from YAML or W&B sweep-style dotted keys."""
+    normalized = {}
+    for key, value in dict(config).items():
+        if "." not in key:
+            normalized[key] = value
+            continue
+
+        target = normalized
+        parts = key.split(".")
+        for part in parts[:-1]:
+            target = target.setdefault(part, {})
+        target[parts[-1]] = value
+
+    return _to_config_dict(normalized)
 
 def get_pareto_front(df, objective_function1, objective_function2, ascending=False):
     """Returns the pareto front of a dataframe with two objective functions

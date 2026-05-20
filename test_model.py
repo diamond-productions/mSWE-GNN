@@ -4,10 +4,8 @@ import time
 
 import lightning as L
 import torch
-from lightning.pytorch.loggers import WandbLogger
 from torch_geometric.data import DataLoader
 
-import wandb
 from training.train import LightningTrainer
 from utils.dataset import (
     create_model_dataset,
@@ -17,10 +15,10 @@ from utils.dataset import (
 from utils.load import read_config
 from utils.miscellaneous import (
     SpatialAnalysis,
-    fix_dict_in_config,
     get_model,
     get_numerical_times,
     get_speed_up,
+    normalize_config,
 )
 
 torch.backends.cudnn.deterministic = True
@@ -93,7 +91,7 @@ def main(config):
         "temporal_test_dataset_parameters": temporal_test_dataset_parameters,
     }
 
-    model = plmodule.load_from_checkpoint(
+    plmodule = LightningTrainer.load_from_checkpoint(
         config.saved_model, map_location=device, **plmodule_kwargs
     )
     model = plmodule.model.to(device)
@@ -157,10 +155,6 @@ if __name__ == "__main__":
     # Read configuration file with parameters
     cfg = read_config(args.config)
 
-    wandb_logger = WandbLogger(mode="disabled", config=cfg)
-
-    fix_dict_in_config(wandb)
-
-    config = wandb.config
+    config = normalize_config(cfg)
 
     main(config)
