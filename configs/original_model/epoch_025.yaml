@@ -1,0 +1,90 @@
+# dataset creation parameters
+dataset_parameters:
+    dataset_folder: "database/datasets"
+    temporal_res: 120
+    train_dataset_name: "multiscale_mesh_dataset"
+    train_size: 80
+    val_prcnt: 0.25
+    test_dataset_name: "multiscale_mesh_dataset"
+    seed: 381
+
+# Scaler options: null, 'minmax', 'minmax_neg', or 'standard'
+scalers:
+    DEM_scaler: null
+    slope_scaler: null
+    area_scaler: "standard"
+    edge_length_scaler: "standard"
+    edge_slope_scaler: null
+    WD_scaler: null
+    V_scaler: null
+
+# node features
+selected_node_features:
+    slopes: False
+    slope: False
+    area: True
+    DEM: True
+
+# edge features
+selected_edge_features:
+    edge_length: True
+    edge_relative_distance: False
+    edge_slope: False
+
+# temporal training dataset
+temporal_dataset_parameters:
+    rollout_steps: 6
+    previous_t: 3
+    time_start: 0
+    time_stop: -1 #*int(60/temporal_res)
+
+# Models hyperparameters
+models:
+    model_type: "MSGNN"
+    hid_features: 64
+    mlp_layers: 3
+    seed: 666
+    learned_residuals: True
+    mlp_activation: "prelu"
+    gnn_activation: "tanh"
+    edge_mlp: True
+    normalize: True
+    with_filter_matrix: True
+    with_gradient: True
+    with_WL: True
+    K: 4
+    # MSGNN parameters
+    learned_pooling: False
+    skip_connections: True
+
+trainer_options:
+    type_loss: "RMSE"
+    only_where_water: True
+    batch_size: 4
+    conservation: 0
+    velocity_scaler: 7
+    curriculum_epoch: 20
+    patience: 100
+    max_epochs: 200
+    checkpoint_epochs: [25, 50, 100, 150]
+    checkpoint_dir: "lightning_logs/original_config_checkpoints"
+
+# learning rate
+lr_info:
+    learning_rate: 0.003
+    weight_decay: 0
+    gamma: 0.7
+    step_size: 20
+
+# temporal_test_dataset_parameters:
+#   time_start  : 1
+#   time_stop   : -1
+
+saved_model: "lightning_logs/original_config_checkpoints/epoch_025.ckpt"
+
+# Optional Aim settings. Logs are written locally and can be viewed with:
+# pixi run aim up --repo results/aim
+# aim:
+#     repo: "results/aim"
+#     experiment: "mSWE-GNN"
+#     run_name: "K4_F64"

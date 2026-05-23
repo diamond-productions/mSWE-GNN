@@ -1,4 +1,7 @@
 # Libraries
+import json
+from pathlib import Path
+
 import numpy as np
 import torch
 import torch.optim as optim
@@ -179,6 +182,25 @@ class LightningTrainer(L.LightningModule):
         self.log("val_CSI_005", CSI_005, prog_bar=True)
         self.log("val_CSI_03", CSI_03, prog_bar=False)
 
+    def on_validation_epoch_end(self):
+        if self.trainer.sanity_checking or not self.trainer.logger:
+            return
+
+        epoch_metrics = {}
+        for metric_name, logged_name in (
+            ("val_CSI_005", "val_epoch/CSI_005"),
+            ("val_CSI_03", "val_epoch/CSI_03"),
+        ):
+            metric = self.trainer.callback_metrics.get(metric_name)
+            if metric is not None:
+                epoch_metrics[logged_name] = metric.detach().cpu().item()
+
+        if epoch_metrics:
+            self.trainer.logger.log_metrics(
+                epoch_metrics,
+                step=self.trainer.current_epoch,
+            )
+
     def predict_step(self, batch, batch_idx):     
         predicted_rollout = rollout_test(self.model, batch)
         return [predicted_rollout[batch.ptr[i]:batch.ptr[i+1]] 
@@ -233,6 +255,53 @@ class TestLossLogger(Callback):
 
         if was_training:
             pl_module.train()
+
+class MilestoneCheckpoint(Callback):
+    def __init__(self, epochs, dirpath):
+        super().__init__()
+        self.epochs = {int(epoch) for epoch in epochs}
+        self.dirpath = Path(dirpath)
+        self.saved_epochs = set()
+
+    def on_validation_epoch_end(self, trainer, pl_module):
+        completed_epoch = trainer.current_epoch + 1
+        if completed_epoch in self.epochs:
+            self._save(trainer, completed_epoch, "epoch")
+
+    def on_train_end(self, trainer, pl_module):
+        completed_epoch = trainer.current_epoch
+        self._save(trainer, completed_epoch, "final")
+
+    def _save(self, trainer, completed_epoch, label):
+        if completed_epoch in self.saved_epochs and label != "final":
+            return
+
+        self.dirpath.mkdir(parents=True, exist_ok=True)
+        stem = f"{label}_{completed_epoch:03d}"
+        trainer.save_checkpoint(self.dirpath / f"{stem}.ckpt")
+
+        metrics = {
+            key: self._to_jsonable(value)
+            for key, value in trainer.callback_metrics.items()
+        }
+        metrics["completed_epoch"] = completed_epoch
+        metrics["checkpoint"] = f"{stem}.ckpt"
+
+        with open(self.dirpath / f"{stem}_statistics.json", "w") as file:
+            json.dump(metrics, file, indent=2, sort_keys=True)
+
+        self.saved_epochs.add(completed_epoch)
+
+    @staticmethod
+    def _to_jsonable(value):
+        if isinstance(value, torch.Tensor):
+            value = value.detach().cpu()
+            if value.numel() == 1:
+                return value.item()
+            return value.tolist()
+        if isinstance(value, np.generic):
+            return value.item()
+        return value
 
 class DataModule(L.LightningDataModule):
     def __init__(self, temporal_train_dataset, temporal_val_dataset, 

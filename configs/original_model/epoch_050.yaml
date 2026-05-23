@@ -66,6 +66,8 @@ trainer_options:
     curriculum_epoch: 20
     patience: 100
     max_epochs: 200
+    checkpoint_epochs: [25, 50, 100, 150]
+    checkpoint_dir: "lightning_logs/original_config_checkpoints"
 
 # learning rate
 lr_info:
@@ -78,7 +80,7 @@ lr_info:
 #   time_start  : 1
 #   time_stop   : -1
 
-saved_model: "results/Pareto_front/models/K4_F64.h5" # specify the model to be tested
+saved_model: "lightning_logs/original_config_checkpoints/epoch_050.ckpt"
 
 # Optional Aim settings. Logs are written locally and can be viewed with:
 # pixi run aim up --repo results/aim

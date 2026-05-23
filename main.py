@@ -1,8 +1,9 @@
-# Libraries
 import argparse
 import os
 import time
 
+# Keep Matplotlib cache files inside the project output folder. This avoids
+# permission issues on shared machines where the default home cache is read-only.
 os.environ.setdefault("MPLCONFIGDIR", os.path.join("results", ".cache", "matplotlib"))
 
 import lightning as L
@@ -12,7 +13,13 @@ from aim.pytorch_lightning import AimLogger
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from torch_geometric.data import DataLoader
 
-from training.train import CurriculumLearning, DataModule, LightningTrainer, TestLossLogger
+from training.train import (
+    CurriculumLearning,
+    DataModule,
+    LightningTrainer,
+    MilestoneCheckpoint,
+    TestLossLogger,
+)
 from utils.dataset import (
     create_model_dataset,
     get_temporal_test_dataset_parameters,
@@ -34,6 +41,7 @@ torch.set_float32_matmul_precision("high")
 
 
 def get_aim_logger(cfg):
+    """Create the Aim logger from config values or environment variables."""
     aim_cfg = cfg.get("aim", {}) or {}
     enabled = aim_cfg.get("enabled", os.getenv("AIM_ENABLED", "true"))
     if isinstance(enabled, str):
@@ -56,10 +64,13 @@ def get_aim_logger(cfg):
 
 
 def main(config, logger):
+    # Seed all supported libraries so dataset splits and model initialization are repeatable.
     L.seed_everything(config.models["seed"])
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    # Split the raw simulations into train/validation/test graph datasets and
+    # apply the configured feature selection/scaling.
     dataset_parameters = config.dataset_parameters
     scalers = config.scalers
     selected_node_features = config.selected_node_features
@@ -74,6 +85,8 @@ def main(config, logger):
     )
 
     temporal_dataset_parameters = config.temporal_dataset_parameters
+    # Training samples are short temporal windows. The model learns to predict
+    # future water variables from the previous_t input states.
     temporal_train_dataset = to_temporal_dataset(
         train_dataset, **temporal_dataset_parameters
     )
@@ -103,10 +116,12 @@ def main(config, logger):
     model_parameters = config.models
     model_type = model_parameters.pop("model_type")
 
+    # MSGNN needs to know how many mesh scales are present before construction.
     if model_type == "MSGNN":
         num_scales = train_dataset[0].mesh.num_meshes
         model_parameters["num_scales"] = num_scales
 
+    # get_model maps the config string to the concrete GNN/MSGNN class.
     model = get_model(model_type)(
         num_node_features=num_node_features,
         num_edge_features=num_edge_features,
@@ -119,7 +134,8 @@ def main(config, logger):
     type_loss = trainer_options["type_loss"]
     lr_info = config["lr_info"]
 
-    # info for testing dataset
+    # Validation/test use full rollouts, not the short curriculum rollout length
+    # used for training batches.
     temporal_test_dataset_parameters = get_temporal_test_dataset_parameters(
         config, temporal_dataset_parameters
     )
@@ -136,32 +152,41 @@ def main(config, logger):
         temporal_test_dataset, batch_size=len(temporal_test_dataset), shuffle=False
     )
 
+    # LightningTrainer wraps the hydraulic model with optimization, rollout,
+    # validation, and metric logging logic.
     plmodule = LightningTrainer(
         model, lr_info, trainer_options, temporal_test_dataset_parameters
     )
 
+    # The DataModule owns the PyG dataloaders used by Lightning during training.
     pldatamodule = DataModule(
         temporal_train_dataset,
         temporal_val_dataset,
         batch_size=trainer_options["batch_size"],
     )
 
-    # Number of parameters
+    # Log model capacity once at step 0 so it is visible in Aim next to metrics.
     total_parameteres = sum(p.numel() for p in model.parameters())
     if logger:
         logger.log_metrics({"total parameters": total_parameteres}, step=0)
 
-    # Training
-    # Define callbacks
+    # Define callbacks for checkpointing, curriculum learning, test loss
+    # evaluation at epoch end, and early stopping on validation CSI.
     checkpoint_callback = ModelCheckpoint(
         dirpath="lightning_logs/models", monitor="val_loss", mode="min", save_top_k=1
+    )
+    milestone_checkpoint = MilestoneCheckpoint(
+        trainer_options.get("checkpoint_epochs", []),
+        trainer_options.get("checkpoint_dir", "lightning_logs/milestone_checkpoints"),
     )
     curriculum_callback = CurriculumLearning(max_rollout_steps, patience=5)
     test_loss_logger = TestLossLogger(test_dataloader)
     early_stopping = EarlyStopping(
         "val_CSI_005", mode="max", patience=trainer_options["patience"]
     )
-    # Load trained model
+
+    # These arguments are required when reloading a Lightning checkpoint because
+    # the wrapped model and config objects are not reconstructed automatically.
     plmodule_kwargs = {
         "model": model,
         "lr_info": lr_info,
@@ -170,12 +195,14 @@ def main(config, logger):
     }
 
     if "saved_model" in config:
+        # Optional warm start from a previously saved model checkpoint.
         plmodule = LightningTrainer.load_from_checkpoint(
             config["saved_model"], map_location=device, **plmodule_kwargs
         )
         model = plmodule.model.to(device)
 
-    # Define trainer
+    # Lightning handles device selection, mixed precision, gradient clipping, and
+    # dispatching logs/callbacks during fit/validate/predict.
     trainer = L.Trainer(
         accelerator="auto",
         devices="auto",
@@ -186,25 +213,27 @@ def main(config, logger):
         logger=logger,
         callbacks=[
             checkpoint_callback,
+            milestone_checkpoint,
             curriculum_callback,
             test_loss_logger,
             early_stopping,
         ],
     )
 
-    # Train and get trained model
+    # Fit the model using the training DataModule and validation callbacks.
     trainer.fit(plmodule, pldatamodule)
 
-    # Load the best model checkpoint
+    # Continue evaluation with the checkpoint that had the lowest validation loss.
     plmodule = LightningTrainer.load_from_checkpoint(
         checkpoint_callback.best_model_path, map_location=device, **plmodule_kwargs
     )
     model = plmodule.model.to(device)
 
-    # validate with trained model
+    # Run validation once more with the selected checkpoint so final validation
+    # metrics correspond to the model used for testing.
     trainer.validate(plmodule, pldatamodule)
 
-    # Numerical simulation times
+    # Load reference numerical solver runtimes to compare against model inference.
     maximum_time = test_dataset[0].WD.shape[1]
     numerical_times = get_numerical_times(
         test_dataset_name + "_test",
@@ -215,7 +244,9 @@ def main(config, logger):
         overview_file="database/overview.csv",
     )
 
-    # Rollout error and time
+    # Predict complete test rollouts and measure average inference time per
+    # simulation. The nested Lightning output is flattened back to one rollout
+    # per test simulation.
     start_time = time.time()
     predicted_rollout = trainer.predict(plmodule, dataloaders=test_dataloader)
     prediction_times = time.time() - start_time
@@ -229,6 +260,8 @@ def main(config, logger):
         **temporal_test_dataset_parameters,
     )
 
+    # SpatialAnalysis computes rollout losses, CSI, speed-up, and plots using
+    # the same temporal test settings used to generate predictions.
     rollout_loss = spatial_analyser._get_rollout_loss(type_loss=type_loss)
     model_times = spatial_analyser.prediction_times
     test_roll_loss_WD = rollout_loss.mean(0)[0].item()
@@ -238,7 +271,7 @@ def main(config, logger):
     print("test roll loss WD:", test_roll_loss_WD)
     print("test roll loss V:", test_roll_loss_V)
 
-    # Speed up
+    # Speed-up compares numerical solver wall time with learned model inference.
     avg_speedup, std_speedup = get_speed_up(numerical_times, model_times)
 
     print(
@@ -249,6 +282,8 @@ def main(config, logger):
     )
 
     if logger:
+        # Final test metrics are logged once at the completed epoch so they align
+        # with the terminal training state in Aim.
         completed_epoch = trainer.current_epoch
         logger.log_metrics(
             {
@@ -268,6 +303,7 @@ def main(config, logger):
             step=completed_epoch,
         )
 
+    # Save aggregate CSI-over-time and qualitative best/worst rollout figures.
     fig, _ = spatial_analyser.plot_CSI_rollouts(water_thresholds=[0.05, 0.3])
     plt.savefig("results/CSI.png")
 
@@ -300,7 +336,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    # Read configuration file with parameters
+    # Read the YAML file and normalize nested dicts for attribute-style access.
     cfg = read_config(args.config)
 
     logger = get_aim_logger(cfg)
